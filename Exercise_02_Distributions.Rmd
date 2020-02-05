@@ -206,7 +206,13 @@ lines(x,dunif(x,-3,3),col=2)
 ### Lab questions: 
 ```
 1. Why does the height of the uniform PDF change as the width changes?
+
+Because the area under the curves are all equal to 1.
+
 2. What do the second and third arguments to the uniform specify? What are their default values?
+
+They specify the lower and upper limits of the distribution respectively.By default, min = 0, max = 1.
+
 ```
 
 ### Beta
@@ -245,8 +251,32 @@ lines(p,dbeta(p,3,3),col=2)
 ```
 Lab questions: 
   3) The Beta has a special case, Beta(1,1) that is equivalent to what other PDF?
+  It is equivalent to Unif(0,1)
+  
   4) In the first panel, the mean is the same for each line (0.5).  What are the variances? (Hint: Calculate this analytically. Look up the distribution in one of the recommended references.)
+  Var1=0.02
+  Var2=0.08
+  Var3=0.18
+```  
+  
+```{R}  
+a=c(5,1,0.2)
+b=c(5,1,0.2)
+Var = a*b/(a+b)^2/(a+b+1)
+```
+
+```  
   5) In the second panel, what are the means and medians of each of these curves?  (Hint: you'll need to calculate the mean analytically and use one of the variants of R's beta function to find the median.)
+```
+
+```{R}
+a=rep(6,6)
+b=c(6,4,2,1.25,1,0.25)
+Mean = a/(a+b)
+Median = matrix(NA,1,6)
+for (i in 1:6) {
+  Median[i] = qbeta(0.5,a[i],b[i])
+}
 ```
 
 ### Log Normal
@@ -292,6 +322,8 @@ lines(x,dlnorm(x,2,1),col=4)
 ### Lab questions
 ```
 6) What are the arithmetric and geometric means of the three curves in the first panel? (Reminder: arithmetic means are means in the linear domain, geometric means are means in the log domain)
+Arithmetic means: 0,1,2
+Geometric means: 1,2.72,7.34
 ```
 
 ## Exponential & Laplace
@@ -324,6 +356,9 @@ lines(x,dnorm(x,5),col=2)
 ### Lab questions:
 ``` 
 7) The last two panels compare a normal and a Laplace distribution with the same mean and variance.  How do the two compare?  In particular, compare the difference in the probabilities of extreme events in each distribution.
+
+The Laplace distribution has fatter tails than the normal distribution.
+
 ```
 
 ## Gamma
@@ -376,6 +411,9 @@ shape
 ### Lab questions:
 ``` 
 8) Looking at the 'change variance' figure, how does the variance change as a and r increase? Qualitatively, how does this affect the mode and skew? Quantitatively, how does this affect the median (relative to the mean)?
+
+When a and r increase at the same rate, the variance decreases, the mode increases, the skew is less positive, and the median approaches the mean from the left side.
+
 ```
 
 # Part 2: Discrete distributions
@@ -424,6 +462,14 @@ legend("topright",legend=c("sample","pmf"),lty=1,col=1:2)
 ```
 9)  Consider a binomial distribution that has a constant mean, np.  What are the differences in the shape of this distribution if it has a high n and low p vs. a low n and high p?
 ```
+```{R}
+x <- 0:20
+plot(x,dbinom(x,80,0.1),type='s')
+lines(x,dbinom(x,10,0.8),type='s',col=2)
+legend("topright",legend=c("high n","low n"),lty=1,col=1:2)
+
+# The distribution with high n and low p will be more spread out than that with low n and high p.
+```
 
 ## Poisson
 
@@ -453,9 +499,49 @@ The last two panels depict a comparison of the Poisson, Normal, and Binomial wit
 ### Lab questions:
 ```
 10)  Normal distributions are often applied to count data even though count data can only take on positive integer values.  Is this fair is this to do in these two examples? (i.e. how good is the normal approximation)
+
+When the sample size is large and with the same mean and variance, the normal can be a fair approximation to the Poisson and the Bionomial distributions.
+
+```
+```
 11) Would the normal be a fair approximation to the Poisson curves for small numbers (the first panel)? How about for the Bionomial for small numbers (earlier panel of figures on the Binomial)?
+```
+```{R}
+x <- 0:12
+plot(x,dpois(x,1),type='s')
+lines(x+0.5,dnorm(x,1,sqrt(1)),col=1,lty=2)
+lines(x,dpois(x,2),type='s',col=2)
+lines(x+0.5,dnorm(x,2,sqrt(2)),col=2,lty=2)
+lines(x,dpois(x,5),type='s',col=3)
+lines(x+0.5,dnorm(x,5,sqrt(5)),col=3,lty=2)
+legend("topright",legend=c(1,2,5),lty=1,col=1:3)
+# The normal distribution can not approximate well to the Poisson distribution for small numbers.
+
+x <- 0:11
+size = c(1,5,10)
+plot(x,dbinom(x,1,0.5),type='s')
+lines(x+0.5,dnorm(x,0.5,sqrt(0.25)),col=1,lty=2)
+lines(x,dbinom(x,5,0.5),type='s',col=2)
+lines(x+0.5,dnorm(x,2.5,sqrt(1.25)),col=2,lty=2)
+lines(x,dbinom(x,10,0.5),type='s',col=3)
+lines(x+0.5,dnorm(x,5,sqrt(2.5)),col=3,lty=2)
+legend("topright",legend=size,lty=1,col=1:3)
+# The normal distribution can approximate well to the Bionomial distribution for small numbers.
+
+```
+```
 12) Is the Poisson a good approximation of the Binomial?
+No, because theoretically the Poisson and Bionomial can not have both the same mean and variance.
+
 13) Is it possible to choose the parameters so that the Poisson and Binomial to both have the same mean and  variance?  If so what is this parameterization?
+```
+```{R}
+x <- 0:15
+plot(x,dbinom(x,100,0.05),type='s',col=2)       #Binomial with mean 5 (variance = 4.75)
+lines(x,dpois(x,5),col=1,type='s')         #Poisson with mean 5 (variance = 5)
+legend("topright",legend=c("pois","binom"),col=1:2,lty=1)
+## It is possible only when p is very small.
+
 ```
 
 ## Negative binomial
@@ -504,5 +590,16 @@ lines(x,dnbinom(x,1,0.15),type="s",col=4,lty=2)
 ### Lab questions:
 ``` 
 14)  In the 'vary size' panel, what are the means of the curves? 
+
+```
+```{R}
+n = c(1,2,3,5,10)
+p = rep(0.5,5)
+Mean = n*(1-p)/p
+```
+
+```
 15) In the “vary variance” panel, how does the shape of the Negative Binomial compare to the Poisson?
+The Poisson is more narrow and less skewed than the Negative Bionomial.
+
 ```
