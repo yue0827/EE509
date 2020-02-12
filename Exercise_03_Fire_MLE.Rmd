@@ -158,6 +158,14 @@ The output from `nlm` is mostly the same as for `optimize` but it includes a few
 ```
 1) Include code to make a plot of the exponential PDF (with the MLE parameter estimate) on top of the histogram of the data.
 ```
+```{R}
+dat <- c(1,9,9,5,27,9,29,1,11,3,3,11,13,6,11,2,4,1,37,10)
+rho_mle <- 1/mean(dat)
+hist(dat,probability=TRUE)
+xseq = seq(0,40,length=100)
+lines(xseq,dexp(xseq,rho_mle),col=2)
+```
+
 
 ## Case Study 2: Change in Fire Risk With Time
 
@@ -178,7 +186,19 @@ lines(age,dweibull(age,.5,50),col="green")
 
 ```
 2) Does increasing the `shape` parameter cause fire risk to increase or decrease with age?
+It cause fire risk to increase with age.
+
 3) Extra Credit: Plot the CDF of these 3 distributions. What is significant about the scale parameter? What is the analytical solution for the CDF at this point? Add these lines to your CDF plot.
+```
+```{R}
+age = 0:160
+plot(age,pweibull(age,1,50),type='l',ylim = c(0,1),ylab = "CDF") 
+lines(age,pweibull(age,2,50),col=2) 
+lines(age,pweibull(age,.5,50),col=3) 
+legend("topleft",legend=c(1,2,0.5),lty=1,col=c(1,2,3))
+abline(h=pweibull(50,1,50),lty=2)
+abline(v=50,lty=2)
+## The increase of the scale parameter will make the curve steeper and the slope is larger. 
 ```
 
 Let’s begin by loading up the data set and take a quick look at it.  The data are actually stored as the number of times each return interval was observed, so our first step is to use `rep` to reconstruct the observations
@@ -204,6 +224,10 @@ wlik <- function(param){
 
 ```
 4) Since the exponential is a special case of the Weibull, use the code from the first case study to solve for the exponential MLE (rho_mle) for the fire scar data 
+```
+```{R}
+rho_mle <- 1/mean(firedata)
+rho_mle
 ```
 
 Next we'll specify the initial conditions for the numerical optimization – it doesn't matter what values you actually start from provided they are reasonable since they are just our first guess, though the closer you are to the correct value the less likely you are to end up in a local minima and the faster the algorithm will find the minima.  Below we start with the MLE for the Exponential special case.
@@ -285,6 +309,25 @@ Apply one of the **numerical methods** you used above in order to estimate $\rho
 *  Numerical estimate of rho
 *  Negative log likelihood profile
 *  Answer the following question:  If we wanted to test the assumption that mortality rate was constant in time, which of the two data sets could we use and what model would we fit?
+```
+```{R}
+n = length(surv)
+y = sum(surv)
+lkbe <- function(rho){
+  theta = exp(-20*rho)
+  lkbe = -dbinom(y,n,theta,log = TRUE)
+}
+fit <- nlm(lkbe,0.03)
+fit
+```
+```
 6) Extra Credit: A plot of the exponential PDF with two curves, one based on the Exponential model from the start of this lab and the second from the Binomial/Exponential fit you just found 
+```
+```{R}
+theta2 = exp(-20*fit$estimate)
+xseq = seq(0,100,length=101)
+plot(xseq,dexp(xseq,rho_mle),type='l',ylim = c(0,0.1))
+lines(xseq,dbinom(xseq,101,theta2),col=2)
+legend("topright",legend=c("Exp","Binom/Exp"),col=1:2,lty=1)
 ```
 
