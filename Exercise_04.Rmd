@@ -221,10 +221,13 @@ b0  = out$par[2]
 b1  = out$par[3]
 
 dseq = seq(0,30,length=100)       ## seq of x values for drawing curve  
-plot(dseq,a0*dseq^2,type = 'l',col=1,xlab='dia',ylab = 'Fecundity',main = "dia vs ncone")  ## add fecundity relationship
-lines(dseq,a0*dseq^2*pnorm(dseq,b0,b1),col=2)
-legend('topleft',lty=1,legend = c('g(x)','g(x)theta(x)'),col = c(1,2))
-plot(dseq,pnorm(dseq,b0,b1),col=2,type='l',xlab='dia',ylab = 'Maturation',main = 'dia vs cones') 
+plot(dia,ncone,xlab='dia',ylab = 'Fecundity',main = "dia vs ncone")
+lines(dseq,a0*dseq^2,col=2,lwd=2)  ## add fecundity relationship
+lines(dseq,a0*dseq^2*pnorm(dseq,b0,b1),col=3,lwd=2)
+legend('topleft',lty=1,legend = c('g(x)','g(x)theta(x)'),col = c(2,3))
+
+plot(dia,cones,xlab='dia',ylab = 'Maturation',main = 'dia vs cones')
+lines(dseq,pnorm(dseq,b0,b1),col=2) 
 
 ```
 
