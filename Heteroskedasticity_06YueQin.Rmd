@@ -1,0 +1,382 @@
+---
+title: 'Lab 08: Heteroskedasticity'
+author: "EE509"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,echo=FALSE}
+library(rjags)
+library(coda)
+```
+## Objectives
+
+In this lab we're going to:
+
+* Explore putting process models on variances (heteroskedasticity)
+* Explore Bayesian model selection
+
+# Tasks
+
+### Load & Plot Data
+
+```{r}
+load("data/Lab08_het.RData")
+plot(x,y)
+```
+
+# Fit traditional linear model
+
+Start from the basic linear model from lab 5. Fit the model to the data, perform you standard set of Bayesian metrics [trace plots, densities, GBR, pairs, effective sample size, etc.], and plot the resulting model (CI and PI) and data. When simulating your PI, make sure you've got the residual error in the right units (precision vs SD)
+```{r}
+univariate_regression <- "
+model{
+
+  b ~ dmnorm(b0,Vb)  	## multivariate Normal prior on vector of regression params
+  S ~ dgamma(s1,s2)    ## prior precision
+
+  for(i in 1:n){
+	  mu[i] <- b[1] + b[2]*x[i]   	## process model
+	  y[i]  ~ dnorm(mu[i],S)		        ## data model
+  }
+}
+"
+data <- list(x = x, y = y, n = length(y))
+data$b0 <- as.vector(c(0,0))      ## regression b means
+data$Vb <- solve(diag(10000,2))   ## regression b precisions
+data$s1 <- 0.1                    ## error prior n/2
+data$s2 <- 0.1                    ## error prior SS/2
+
+## initial conditions
+nchain = 3
+inits <- list()
+for(i in 1:nchain){
+ inits[[i]] <- list(b = rnorm(2,0,5), S = runif(1,1/200,1/20))
+}
+
+j.model   <- jags.model (file = textConnection(univariate_regression),
+                             data = data,
+                             inits = inits,
+                             n.chains = 3)
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("b","S"),
+                                n.iter = 5000)
+```
+
+```{r}
+plot(jags.out)
+GBR <- gelman.plot(jags.out)               ## determine convergence       
+burnin = 500                                
+jags.burn <- window(jags.out,start=burnin)  ## remove burn-in
+plot(jags.burn) 
+acfplot(jags.burn)
+effectiveSize(jags.burn)
+```
+
+```{r}
+jags.thin = window(jags.burn,thin=10)
+plot(jags.thin)
+summary(jags.thin)
+out <- as.matrix(jags.thin)
+pairs(out)	## pairs plot to evaluate parameter correlation
+cor(out)
+```
+## credible and prediction intervals
+```{r}
+npred <- 100
+xpred <- seq(0,10,length=npred)
+npred <- length(xpred)
+n <- length(out[,1])
+ypred <- matrix(NA,nrow=n,ncol=npred)
+ycred <- matrix(NA,nrow=n,ncol=npred)
+
+for(g in 1:n){
+  Ey <- out[g,2] + out[g,3] * xpred
+  ycred[g,] <- Ey
+  ypred[g,] <- rnorm(npred,Ey,sqrt(1/out[g,1]))
+}
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+plot(x,y)
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2)	## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2)	## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+```
+
+
+## Calculate model selection metrics
+
+### DIC
+
+```{r}
+DIC.ho <- dic.samples(j.model, n.iter=5000)
+DIC.ho
+```
+
+### WAIC
+
+First, within you JAGS model, add the likelihood calculation within your for loop
+```
+ like[i] <- dnorm(y[i],mu[i],S)
+```
+```{r}
+univariate_regression2 <- "
+model{
+
+  b ~ dmnorm(b0,Vb)  	## multivariate Normal prior on vector of regression params
+  S ~ dgamma(s1,s2)    ## prior precision
+
+  for(i in 1:n){
+	  mu[i] <- b[1] + b[2]*x[i]   	## process model
+	  y[i]  ~ dnorm(mu[i],S)		        ## data model
+	  like[i] <- dnorm(y[i],mu[i],S)
+  }
+}
+"
+data <- list(x = x, y = y, n = length(y))
+data$b0 <- as.vector(c(0,0))      ## regression b means
+data$Vb <- solve(diag(10000,2))   ## regression b precisions
+data$s1 <- 0.1                    ## error prior n/2
+data$s2 <- 0.1                    ## error prior SS/2
+
+## initial conditions
+nchain = 3
+inits <- list()
+for(i in 1:nchain){
+ inits[[i]] <- list(b = rnorm(2,0,5), S = runif(1,1/200,1/20))
+}
+
+j.model2   <- jags.model (file = textConnection(univariate_regression2),
+                             data = data,
+                             inits = inits,
+                             n.chains = 3)
+jags.out2   <- coda.samples (model = j.model2,
+                            variable.names = c("b","S","like"),
+                                n.iter = 5000)
+```
+
+```{R}
+plot(jags.out2[,1:3])
+GBR2 <- gelman.plot(jags.out2[,1:3])               ## determine convergence       
+burnin = 500                                
+jags.burn2 <- window(jags.out2,start=burnin)  ## remove burn-in
+plot(jags.burn2[,1:3]) 
+acfplot(jags.burn2[,1:3])
+effectiveSize(jags.burn2[,1:3])
+```
+
+```{R}
+jags.thin2 = window(jags.burn2,thin=10)
+plot(jags.thin2[,1:3])
+summary(jags.thin2[,1:3])
+out2 <- as.matrix(jags.thin2)
+pairs(out2[,!grepl("^like",colnames(out2))])	## pairs plot to evaluate parameter correlation
+cor(out2[,!grepl("^like",colnames(out2))])
+```
+
+Second, assuming that you've converted your JAGS output to a matrix to make the pairs plots and other diagnostics (e.g. `out <- as.matrix(jags.burn)`) we'll want to grab those likelihood columns to calculate WAIC. We'll do that using the `grepl` pattern matching function and the regular expression character `^` which tells R to find any column names that start with the following characters (in this case `like`). Once we do that we'll follow the same calculation as in the  
+
+```{r}
+   like   <- out2[,grepl("^like",colnames(out2))] 
+   fbar   <- colMeans(like)
+   Pw.ho     <- sum(apply(log(like),2,var))
+   WAIC.ho   <- -2*sum(log(fbar))+2*Pw.ho
+   WAIC.ho
+```
+You'll also notice that out output now has a lot of `like` columns that complicate a lot of our other `coda` diagnostics. We can also use `grepl` to _exclude_ all the columns that have a pattern. For example:
+```{r}
+pairs(out2[,!grepl("^like",colnames(out2))])
+```
+
+### Predictive loss
+
+The code for predictive loss is very similar to our code for generating confidence and predictive intervals, with the biggest different being that the calculations are done at the OBSERVED X's not a sequence of X's (though if you sort your X's you can often use that sequence to draw the CI & PI). 
+```{r}
+ngibbs = 1353
+yobs  <- y[order(x)]
+xpred <- x[order(x)]
+npred <- length(xpred)
+ypred <- matrix(NA,nrow=ngibbs,ncol=npred)
+ycred <- matrix(NA,nrow=ngibbs,ncol=npred)
+for(g in 1:ngibbs){
+  ycred[g,] <- out[g,2] + out[g,3] * xpred
+  ypred[g,] <- rnorm(npred,ycred[g,],sqrt(1/out[g,1]))
+}
+## Residual variance
+ybar <- apply(ycred,2,mean)
+G <- sum((yobs-ybar)^2)/npred
+## Predictive variance
+P <- sum(apply(ypred,2,var))/npred
+Dpl <- G + P
+PL.ho <- c(G,P,Dpl)
+PL.ho
+```
+Note: for these metrics I've added `.ho` onto the end of the name for the homoskedastic model. For the heterskedastic model you'll want to change this to something different (e.g. `.he`) so that you don't overwrite the results from your first models (you'll need both to make the table at the end)
+
+# Fit heteroskedastic model 
+
+To add heteroskedasticity, we'll start with the linear regression model and then modify it as follows:
+
+* Within the JAGS `for` loop, add a process model for the calculation of the precision
+
+```
+  s[i] <- a[1] + a[2]*x[i]  ## linear model on standard deviation
+  S[i] <- 1/s[i]^2          ## calculate precision from SD
+```
+
+* Replace prior on `S` with priors on `a[1]` and `a[2]`. To ensure that our variance is always positive, make sure to choose zero-bound prior distributions on `a`. Don't forget to add any new prior parameters to your `data` list.
+
+* Update data model and WAIC likelihood calculation to use `S[i]` instead of a fixed `S`.
+
+* Update your `coda.samples` to include `a` instead of `S`.
+
+* As before, perform your standard MCMC metrics & diagnostics
+
+* Calculate your three model selection metrics (DIC, WAIC, PL)
+  ** For predictive loss, CI, and PI, don't forget to update your process model to include the process model on sigma and to make sure you're grabbing the right parameters! And don't forget the precision vs SD difference between R and JAGS.
+
+* Plot your model and data with CI and PI
+
+* As a final task, make a table that shows the different model selection metrics for both models. Briefly discuss how the metrics performed, what they told us, and where they are the same or different.
+
+### JAGS
+```{r}
+univariate_regression3 <- "
+model{
+
+  b ~ dmnorm(b0,Vb)  	## multivariate Normal prior on vector of regression params
+  a[1] ~ dlnorm(a0,Va)
+  a[2] ~ dlnorm(a0,Va)
+
+  for(i in 1:n){
+	  mu[i] <- b[1] + b[2]*x[i]   	## process model
+	  s[i] <- a[1] + a[2]*x[i]  ## linear model on standard deviation
+    S[i] <- 1/s[i]^2          ## calculate precision from SD
+    y[i]  ~ dnorm(mu[i],S[i])		        ## data model
+    like[i] <- dnorm(y[i],mu[i],S[i])
+  }
+}
+"
+data <- list(x = x, y = y, n = length(y))
+data$b0 <- as.vector(c(0,0))      ## regression b means
+data$Vb <- solve(diag(10000,2))   ## regression b precisions
+data$a0 <- 0.1     
+data$Va <- 1  
+
+## initial conditions
+nchain = 3
+inits <- list()
+for(i in 1:nchain){
+ inits[[i]] <- list(b = rnorm(2,0,5), a = rlnorm(2,0,1))
+}
+
+j.model3   <- jags.model (file = textConnection(univariate_regression3),
+                             data = data,
+                             inits = inits,
+                             n.chains = 3)
+jags.out3   <- coda.samples (model = j.model3,
+                            variable.names = c("b","a","like"),
+                                n.iter = 5000)
+```
+```{R}
+plot(jags.out3[,1:4])
+GBR3 <- gelman.plot(jags.out3[,1:4])               ## determine convergence       
+burnin = 800                                
+jags.burn3 <- window(jags.out3,start=burnin)  ## remove burn-in
+GBR4 <- gelman.plot(jags.burn3[,1:4])
+plot(jags.burn3[,1:4]) 
+acfplot(jags.burn3[,1:4])
+effectiveSize(jags.burn3[,1:4])
+```
+```{R}
+jags.thin3 = window(jags.burn3,thin=10)
+plot(jags.thin3[,1:4])
+summary(jags.thin3[,1:4])
+out3 <- as.matrix(jags.thin3)
+pairs(out3[,!grepl("^like",colnames(out3))])	## pairs plot to evaluate parameter correlation
+cor(out3[,!grepl("^like",colnames(out3))])
+```
+## credible and prediction intervals
+```{r}
+npred <- 100
+xpred <- seq(0,10,length=npred)
+npred <- length(xpred)
+n <- length(out[,1])
+ypred <- matrix(NA,nrow=n,ncol=npred)
+ycred <- matrix(NA,nrow=n,ncol=npred)
+
+for(g in 1:n){
+  ycred[g,] <- out3[g,3] + out3[g,4] * xpred
+  ypred[g,] <- rnorm(npred,ycred[g,],(out3[g,1]+out3[g,2]*xpred))
+}
+ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
+pi <- apply(ypred,2,quantile,c(0.025,0.975))
+
+plot(x,y)
+lines(xpred,ci[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci[1,],col=3,lty=2)	## model CI
+lines(xpred,ci[3,],col=3,lty=2)
+lines(xpred,pi[1,],col=4,lty=2)	## model PI
+lines(xpred,pi[2,],col=4,lty=2)
+```
+
+### DIC
+```{r}
+DIC.he <- dic.samples(j.model3, n.iter=5000)
+DIC.he
+DIC.ho
+```
+
+### WAIC
+```{r}
+   like.he   <- out3[,grepl("^like",colnames(out3))] 
+   fbar.he   <- colMeans(like.he)
+   Pw.he     <- sum(apply(log(like.he),2,var))
+   WAIC.he   <- -2*sum(log(fbar.he))+2*Pw.he
+   WAIC.he
+   WAIC.ho
+   Pw.he
+   Pw.ho
+   -2*sum(log(fbar.he))
+   -2*sum(log(fbar))
+```
+
+### Predictive loss
+```{r}
+ngibbs = 1500
+yobs  <- y[order(x)]
+xpred <- x[order(x)]
+npred <- length(xpred)
+ypred <- matrix(NA,nrow=ngibbs,ncol=npred)
+ycred <- matrix(NA,nrow=ngibbs,ncol=npred)
+for(g in 1:ngibbs){
+  ycred[g,] <- out3[g,3] + out3[g,4] * xpred
+  ypred[g,] <- rnorm(npred,ycred[g,],(out3[g,1]+out3[g,2]*xpred))
+}
+## Residual variance
+ybar <- apply(ycred,2,mean)
+G <- sum((yobs-ybar)^2)/npred
+## Predictive variance
+P <- sum(apply(ypred,2,var))/npred
+Dpl <- G + P
+PL.he <- c(G,P,Dpl)
+PL.he
+PL.ho
+```
+
+### Model selection
+```{r}
+DIC2.ho <- sum(DIC.ho[["deviance"]]) + sum(DIC.ho[["penalty"]])
+DIC2.he <- sum(DIC.he[["deviance"]]) + sum(DIC.he[["penalty"]])
+Modelsel <- data.frame(name=c("ho","he"),DIC=c(DIC2.ho,DIC2.he),WAIC=c(WAIC.ho,WAIC.he),PL=c(PL.ho[3],PL.he[3]))
+Modelsel
+
+## All metrics show the HE model performs better than the HO model.Specifically, for DIC metric, HE has smaller Mean deviance but larger penalty;for PL metric, HE has larger Residual variance but smaller Predictive variance.
+```
+
