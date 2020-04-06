@@ -223,7 +223,7 @@ wlik <- function(param){
 ### Lab Questions
 
 ```
-4) Since the exponential is a special case of the Weibull, use the code from the first case study to solve for the exponential MLE (rho_mle) for the fire scar data 
+4) Since the exponential is a special case of the Weibull, use the numerical optimization code from the first case study to solve for the exponential MLE (rho_mle) for the fire scar data 
 ```
 ```{R}
 rho_mle <- 1/mean(firedata)
@@ -299,7 +299,7 @@ and then substitute in the exponential model for the probability of surviving to
  
 $$L = Binom(y \vert N, \rho) \propto e^{-\rho T y} \left( 1-e^{-\rho T} \right)^{N-y}$$
 
-Apply one of the **numerical methods** you used above in order to estimate $\rho$.
+Apply one of the **numerical optimization methods** you used above in order to estimate $\rho$.
 
 ## Lab Questions
 
