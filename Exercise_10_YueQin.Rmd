@@ -119,7 +119,7 @@ head(dat)
 ```
 The variable `time` used in the code above is a vector of indices (length = nrow(dat)) matching a specific row of data to a specific `alpha.t`. Therefore, when building the `data` list that you pass into `jags.model` you'll want to add `time` and have that vector contain values in the range from 1 to 10 instead of 1995-2004. When working with long data, the easiest way to do this is to convert a column to a factor, then from a factor to an integrer
 ```{r}
-t <- as.integer(as.factor(dat$time))
+ti <- as.integer(as.factor(dat$time))
 ```
 
 2. Update the data model to reference `Ex[t]` instead of `mu`
@@ -175,7 +175,7 @@ jags.out2   <- coda.samples (model = j.model2,
                             variable.names = c("mu","S","alpha.t"),
                                 n.iter = 5000)
 ```
-```{r burnin}
+```{r burnin2}
 plot(jags.out2)
 GBR <- gelman.plot(jags.out2)               ## determine convergence       
 burnin = 1000                                
@@ -185,7 +185,7 @@ acfplot(jags.burn2)
 effectiveSize(jags.burn2)
 ```
 
-```{r summary}
+```{r summary2}
 summary(jags.burn2[,c("S","mu")])
 out2 <- as.matrix(jags.burn2)
 sel.a <- grep("alpha.t",colnames(out2))
@@ -194,11 +194,11 @@ summary(jags.burn2[,sel.a])
 alpha <- out2[,sel.a]
 mu <- out2[,"mu"]
 S <- out2[,"S"]
-apply(alpha,2,mean)
+
 
 ```
 
-```{r CI and PI}
+```{r CI and PI2}
 npred <- 10
 xpred <- seq(1995,2004,length=npred)
 npred <- length(xpred)
@@ -240,8 +240,138 @@ You are discussing your research with a colleague and mention that your random e
 ### Lab Report Task 3:
 
 6.  As an exploratory analysis of this hypothesis, plot the posterior mean of your random year effect (alpha.t) versus each of the three met variables.  Turn in figures and note which variable(s) are worth exploring further.
+```{r}
+met <- read.csv("data/met.csv",header=TRUE,as.is = TRUE)
+alpha.mean <- apply(alpha,2,mean)
+plot(met$MAT[1:10],alpha.mean,col = 2)
+plot(met$RH[1:10],alpha.mean,col = 3)
+NR <- lm(alpha.mean~met$precip[1:10])
+b0 <- coef(NR)[1]
+b1 <- coef(NR)[2]
+plot(met$precip[1:10],alpha.mean)
+xseq <- seq(700,1100,length=50)
+lines(xseq,b0 + b1*xseq,col = 2, lwd = 2)
+b0
+b1
+### Figures show that random year effect has a strong correlation with precipitation which are worth exploring.
+```
+
 7.	Convert the random effects model to a mixed effects model by converting the mean, mu, to a linear model, `beta0 + beta1*y[i]` where y is the meteorological covariate you want to include, while keeping the random year effect.
+```{r mixed effects model}
+prec <- met$precip[1:10]
+ Mixed_effects <- "
+model{
+
+  beta0 ~ dnorm(0,0.0001)
+  beta1 ~ dnorm(0,0.0001)
+  S ~ dgamma(0.001,0.001)    ## prior precision
+  for (t in 1:nt){alpha.t[t] ~ dnorm(0,tau.t)}		## random year effect
+  tau.t ~ dgamma(0.001,0.001)
+
+  for(i in 1:n){
+    Ex[i] <- beta0 + beta1*prec[time[i]] + alpha.t[time[i]]		## process model 
+	  y[i]  ~ dnorm(Ex[i],S)		        ## data model
+  }
+}
+"
+data3 <- list(y = density, prec = prec, n = length(density),time = as.integer(as.factor(dat$time)), nt = 10)
+
+## initial conditions
+nchain = 3
+inits3 <- list()
+for(i in 1:nchain){
+ inits3[[i]] <- list(beta0 = b0, beta1 = b1, S = runif(1,1/200,1/20))
+}
+
+j.model3   <- jags.model (file = textConnection(Mixed_effects),
+                             data = data3,
+                             inits = inits3,
+                             n.chains = 3)
+jags.out3   <- coda.samples (model = j.model3,
+                            variable.names = c("beta0","beta1","S","alpha.t"),
+                                n.iter = 200000)
+```
+
+```{r burnin3}
+# plot(jags.out3[,c("S","beta0","beta1")])
+GBR <- gelman.plot(jags.out3[,c("S","beta0","beta1")])               ## determine convergence       
+burnin = 2000
+jags.burn3 <- window(jags.out3,start=burnin)  ## remove burn-in
+# plot(jags.burn3[,c("S","beta0","beta1")])
+acfplot(jags.burn3[,c("S","beta0","beta1")])
+effectiveSize(jags.burn3)
+```
+
+```{r summary3}
+summary(jags.burn3[,c("S","beta0","beta1")])
+out3 <- as.matrix(jags.burn3)
+sel.a2 <- grep("alpha.t",colnames(out3))
+# plot(jags.burn3[,sel.a2])
+summary(jags.burn3[,sel.a2])
+alpha2 <- out3[,sel.a2]
+beta0 <- out3[,"beta0"]
+beta1 <- out3[,"beta1"]
+S2 <- out3[,"S"]
+
+
+```
 8.	Fit your mixed effects model and plot the model CI and PI vs the data
+```{r fix & CI and PI}
+npred <- 10
+xpred <- seq(1995,2004,length=npred)
+npred <- length(xpred)
+n <- length(out3[,1])
+ypred3 <- matrix(NA,nrow=n,ncol=npred)
+ycred3 <- matrix(NA,nrow=n,ncol=npred)
+
+
+for(g in 1:n){
+  for (t in 1:npred){
+    Ey <- beta0[g] + beta1[g]*prec[t] + alpha2[g,t]
+    ycred3[g,t] <- Ey
+    ypred3[g,t] <- rnorm(1,Ey,sqrt(1/S2[g]))
+  }
+}
+ci3 <- apply(ycred3,2,quantile,c(0.025,0.5,0.975))
+pi3 <- apply(ypred3,2,quantile,c(0.025,0.975))
+
+plot(time,density,col=rep,ylim = c(6,9))
+lines(xpred,ci3[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci3[1,],col=3,lty=2)	## model CI
+lines(xpred,ci3[3,],col=3,lty=2)
+lines(xpred,pi3[1,],col=4,lty=2)	## model PI
+lines(xpred,pi3[2,],col=4,lty=2)
+```
 9.	Create a summary table that provides the posterior parameter means and CI for all 3 models and their DIC scores.
+```{r model selection}
+Global_mean.mu_mean <- mean(out[,"mu"])
+Global_mean.mu_CI <- quantile(out[,"mu"],c(0.025,0.975))
+Global_mean.S_mean <- mean(out[,"S"])
+Global_mean.S_CI <- quantile(out[,"S"],c(0.025,0.975))
+Global_mean.DIC0 <- dic.samples(j.model, n.iter=5000)
+Global_mean.DIC <- sum(Global_mean.DIC0[["deviance"]]) + sum(Global_mean.DIC0[["penalty"]])
+
+Random_time.mu_mean <- mean(mu)
+Random_time.mu_CI <- quantile(mu,c(0.025,0.975))
+Random_time.S_mean <- mean(S)
+Random_time.S_CI <- quantile(S,c(0.025,0.975))
+Random_time.DIC0 <- dic.samples(j.model2, n.iter=5000)
+Random_time.DIC <- sum(Random_time.DIC0[["deviance"]]) + sum(Random_time.DIC0[["penalty"]])
+
+Mixed_effects.beta0_mean <- mean(beta0)
+Mixed_effects.beta0_CI <- quantile(beta0,c(0.025,0.975))
+Mixed_effects.beta1_mean <- mean(beta1)
+Mixed_effects.beta1_CI <- quantile(beta1,c(0.025,0.975))
+Mixed_effects.S_mean <- mean(S2)
+Mixed_effects.S_CI <- quantile(S2,c(0.025,0.975))
+Mixed_effects.DIC0 <- dic.samples(j.model3, n.iter=200000)
+Mixed_effects.DIC <- sum(Mixed_effects.DIC0[["deviance"]]) + sum(Mixed_effects.DIC0[["penalty"]])
+
+summary <- list()
+summary[["Global_mean"]] <- list(mu_mean = Global_mean.mu_mean, mu_CI = Global_mean.mu_CI, S_mean = Global_mean.S_mean, S_CI = Global_mean.S_CI, DIC = Global_mean.DIC)
+summary[["Random_time"]] <- list(mu_mean = Random_time.mu_mean, mu_CI = Random_time.mu_CI, S_mean = Random_time.S_mean, S_CI = Random_time.S_CI, DIC = Random_time.DIC)
+summary[["Mixed_effects"]] <- list(beta0_mean = Mixed_effects.beta0_mean, beta0_CI = Mixed_effects.beta0_CI, beta1_mean = Mixed_effects.beta1_mean, beta1_CI = Mixed_effects.beta1_CI, S_mean = Mixed_effects.S_mean, S_CI = Mixed_effects.S_CI, DIC = Mixed_effects.DIC)
+```
+
 10.	Extra Credit: Use the best fitting model to predict the next 5 years (2005-2009) of mosquito abundance including an uncertainty estimate (predictive interval). Turn in a graph of your prediction. Hint: the easiest way to make predictions is to create new rows in your data object that has covariates but NA's for the y's.
 
