@@ -225,7 +225,10 @@ lines(xpred,pi2[2,],col=4,lty=2)
 ```
 5.	Based on the posterior mean estimates from this model, approximately what percentage of the variance in the mosquito densities is explained by the year effects? Which parameters (and from which models) do you need to look at to assess this?
 ``` {r}
-0.003433/0.000436
+Var1 = sqrt(1/9.482)
+Var2 = sqrt(1/21.661)
+Var2/Var1
+# By comparing the mean sigma of both model and calculating the corresponding standard deviation, about 66% of variance is explained by the year effects. 
 ```
 
 6. Extra Credit: Repeat the Task 2 analysis adding a random effect on `rep`
