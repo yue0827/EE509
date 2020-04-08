@@ -26,56 +26,39 @@ plot(time,density,col=rep)
 ```
 
 2.	Fit a Bayesian model for the overall "global" mean `mu`, and precision `sigma`, reporting summary statistics for both. 
-```{r}
-library(tidyverse)
-dat2 <- data.frame(dat)
-global_mean <- dat2 %>% 
-  group_by(time) %>% 
-  summarize(
-    averaged.density = mean(density),
-    sd.density = sd(density),
-    n = n()
-  )
-plot(global_mean$time,global_mean$averaged.density)
-```
 
 ```{r,echo=FALSE}
 library(rjags)
 library(coda)
 ```
 
-```{r Bayesian model}
-normal_regression <- "
+```{r Global_mean}
+Global_mean <- "
 model{
 
-  b ~ dmnorm(b0,Vb)  	## multivariate Normal prior on vector of regression params
-  S ~ dgamma(s1,s2)    ## prior precision
+  mu ~ dnorm(0,0.001)
+  S ~ dgamma(0.001,0.001)    ## prior precision
 
   for(i in 1:n){
-	  mu[i] <- b[1] + b[2]*x[i]   	## process model
-	  y[i]  ~ dnorm(mu[i],S)		        ## data model
+	  y[i]  ~ dnorm(mu,S)		        ## data model
   }
 }
 "
-data <- list(x = global_mean$time, y = global_mean$averaged.density, n = length(global_mean$time))
-data$b0 <- as.vector(c(0,0))      ## regression b means
-data$Vb <- solve(diag(10000,2))   ## regression b precisions
-data$s1 <- 0.1                    ## error prior n/2
-data$s2 <- 0.1                    ## error prior SS/2
+data <- list(y = density, n = length(density))
 
 ## initial conditions
 nchain = 3
 inits <- list()
 for(i in 1:nchain){
- inits[[i]] <- list(b = rnorm(2,0,5), S = runif(1,1/200,1/20))
+ inits[[i]] <- list(mu = rnorm(1,0,5), S = runif(1,1/200,1/20))
 }
 
-j.model   <- jags.model (file = textConnection(normal_regression),
+j.model   <- jags.model (file = textConnection(Global_mean),
                              data = data,
                              inits = inits,
                              n.chains = 3)
 jags.out   <- coda.samples (model = j.model,
-                            variable.names = c("b","S"),
+                            variable.names = c("mu","S"),
                                 n.iter = 5000)
 ```
 ```{r burnin}
@@ -104,14 +87,14 @@ ypred <- matrix(NA,nrow=n,ncol=npred)
 ycred <- matrix(NA,nrow=n,ncol=npred)
 
 for(g in 1:n){
-  Ey <- out[g,2] + out[g,3] * xpred
+  Ey <- out[g,2]
   ycred[g,] <- Ey
   ypred[g,] <- rnorm(npred,Ey,sqrt(1/out[g,1]))
 }
 ci <- apply(ycred,2,quantile,c(0.025,0.5,0.975))
 pi <- apply(ypred,2,quantile,c(0.025,0.975))
 
-plot(global_mean$time,global_mean$averaged.density,ylim = c(6,9))
+plot(time,density,col=rep,ylim = c(6,9))
 lines(xpred,ci[2,],col=3,lwd=2)  ## median model
 lines(xpred,ci[1,],col=3,lty=2)	## model CI
 lines(xpred,ci[3,],col=3,lty=2)
@@ -136,7 +119,7 @@ head(dat)
 ```
 The variable `time` used in the code above is a vector of indices (length = nrow(dat)) matching a specific row of data to a specific `alpha.t`. Therefore, when building the `data` list that you pass into `jags.model` you'll want to add `time` and have that vector contain values in the range from 1 to 10 instead of 1995-2004. When working with long data, the easiest way to do this is to convert a column to a factor, then from a factor to an integrer
 ```{r}
-as.integer(as.factor(dat$time))
+t <- as.integer(as.factor(dat$time))
 ```
 
 2. Update the data model to reference `Ex[t]` instead of `mu`
@@ -160,7 +143,90 @@ summary(jags.out[,sel.a])
 alpha <- jags.mat[,sel.a]
 apply(alpha,2,mean)
 ```
+```{r random-time model}
+Random_time <- "
+model{
+
+  mu ~ dnorm(0,0.001)
+  S ~ dgamma(0.001,0.001)    ## prior precision
+  for (t in 1:nt){alpha.t[t] ~ dnorm(0,tau.t)}		## random year effect
+  tau.t ~ dgamma(0.001,0.001)
+
+  for(i in 1:n){
+    Ex[i] <- mu + alpha.t[time[i]]		## process model (varies with time but not rep)
+	  y[i]  ~ dnorm(Ex[i],S)		        ## data model
+  }
+}
+"
+data2 <- list(y = density, n = length(density),time = as.integer(as.factor(dat$time)), nt = 10)
+
+## initial conditions
+nchain = 3
+inits <- list()
+for(i in 1:nchain){
+ inits[[i]] <- list(mu = rnorm(1,0,5), S = runif(1,1/200,1/20))
+}
+
+j.model2   <- jags.model (file = textConnection(Random_time),
+                             data = data2,
+                             inits = inits,
+                             n.chains = 3)
+jags.out2   <- coda.samples (model = j.model2,
+                            variable.names = c("mu","S","alpha.t"),
+                                n.iter = 5000)
+```
+```{r burnin}
+plot(jags.out2)
+GBR <- gelman.plot(jags.out2)               ## determine convergence       
+burnin = 1000                                
+jags.burn2 <- window(jags.out2,start=burnin)  ## remove burn-in
+plot(jags.burn2) 
+acfplot(jags.burn2)
+effectiveSize(jags.burn2)
+```
+
+```{r summary}
+summary(jags.burn2[,c("S","mu")])
+out2 <- as.matrix(jags.burn2)
+sel.a <- grep("alpha.t",colnames(out2))
+plot(jags.burn2[,sel.a])
+summary(jags.burn2[,sel.a])
+alpha <- out2[,sel.a]
+mu <- out2[,"mu"]
+S <- out2[,"S"]
+apply(alpha,2,mean)
+
+```
+
+```{r CI and PI}
+npred <- 10
+xpred <- seq(1995,2004,length=npred)
+npred <- length(xpred)
+n <- length(out2[,1])
+ypred2 <- matrix(NA,nrow=n,ncol=npred)
+ycred2 <- matrix(NA,nrow=n,ncol=npred)
+
+for(g in 1:n){
+  for (t in 1:npred){
+    Ey <- mu[g] + alpha[g,t]
+    ycred2[g,t] <- Ey
+    ypred2[g,t] <- rnorm(1,Ey,sqrt(1/S[g]))
+  }
+}
+ci2 <- apply(ycred2,2,quantile,c(0.025,0.5,0.975))
+pi2 <- apply(ypred2,2,quantile,c(0.025,0.975))
+
+plot(time,density,col=rep,ylim = c(6,9))
+lines(xpred,ci2[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci2[1,],col=3,lty=2)	## model CI
+lines(xpred,ci2[3,],col=3,lty=2)
+lines(xpred,pi2[1,],col=4,lty=2)	## model PI
+lines(xpred,pi2[2,],col=4,lty=2)
+```
 5.	Based on the posterior mean estimates from this model, approximately what percentage of the variance in the mosquito densities is explained by the year effects? Which parameters (and from which models) do you need to look at to assess this?
+``` {r}
+0.003433/0.000436
+```
 
 6. Extra Credit: Repeat the Task 2 analysis adding a random effect on `rep`
 
