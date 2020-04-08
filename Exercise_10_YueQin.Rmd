@@ -371,6 +371,8 @@ summary <- list()
 summary[["Global_mean"]] <- list(mu_mean = Global_mean.mu_mean, mu_CI = Global_mean.mu_CI, S_mean = Global_mean.S_mean, S_CI = Global_mean.S_CI, DIC = Global_mean.DIC)
 summary[["Random_time"]] <- list(mu_mean = Random_time.mu_mean, mu_CI = Random_time.mu_CI, S_mean = Random_time.S_mean, S_CI = Random_time.S_CI, DIC = Random_time.DIC)
 summary[["Mixed_effects"]] <- list(beta0_mean = Mixed_effects.beta0_mean, beta0_CI = Mixed_effects.beta0_CI, beta1_mean = Mixed_effects.beta1_mean, beta1_CI = Mixed_effects.beta1_CI, S_mean = Mixed_effects.S_mean, S_CI = Mixed_effects.S_CI, DIC = Mixed_effects.DIC)
+
+summary
 ```
 
 10.	Extra Credit: Use the best fitting model to predict the next 5 years (2005-2009) of mosquito abundance including an uncertainty estimate (predictive interval). Turn in a graph of your prediction. Hint: the easiest way to make predictions is to create new rows in your data object that has covariates but NA's for the y's.
