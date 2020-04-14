@@ -68,7 +68,7 @@ xseq = seq(0,0.6,length.out=nseq)
 PRy <- matrix(NA,nseq,1)
 for (i in 1:nseq)
 {
-  PRy[i] = rpois(1,exp(b0+b1*xseq[i]))
+  PRy[i] = exp(b0+b1*xseq[i])
 }
 plot(TDR,y)
 lines(xseq,PRy,col=3,lwd=2)
@@ -96,7 +96,7 @@ xseq = seq(0,0.7,length.out=nseq)
 NRy <- matrix(NA,nseq,1)
 for (i in 1:nseq)
 {
-  NRy[i] = rnorm(1,(a0+a1*xseq[i]),summary(NR1)$sigma)
+  NRy[i] = a0+a1*xseq[i]
 }
 plot(TDRc,SMc)
 lines(xseq,NRy,col=3,lwd=2)
@@ -217,8 +217,8 @@ To show how this works:
 data2 <- data
 data2[["x"]][12] <- NA
 data[["x"]][12]
-min(x)
-max(x)
+min(TDR)
+max(TDR)
 ```
 
 * Make a copy of your JAGS script and add a prior on the missing value. For example, if you removed the 12th TDR measurement you could put a prior on TDR[12] (e.g. a uniform over the range of valid data).
