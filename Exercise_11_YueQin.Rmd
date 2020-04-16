@@ -71,19 +71,270 @@ Finally, unlike many of your previous labs that converge quickly and are insensi
 ## Lab Report Tasks
 
 Lab Report Task 1
+```{r Load data}
+data <- read.table("data/alcesdata.txt",sep = "",head = T) 
+data$logN <- log(data$density)
+y <- data$logN
+ind <- which(!is.na(y))
+ind_na <- which(is.na(y))
+library(rjags)
+library(coda)
+```
+
 
 1.  Write out and run the JAGS code for the exponential growth model.  Include the JAGS code and standard MCMC diagnostics in your lab report.  Also include the following plots:
 a) Plots of the time series data on both the LOG and LINEAR scales that include the model mean and credible intervals. Note: the linear scale plots are just a transform of the outputs from the log-scale model, NOT a different model. Also remember that because of Jensen's inequality you shouldn't transform the summary statistics, but you CAN transform the MCMC samples themselves
 b) Density plots for the predicted values for the missing data. Note: make sure to track these variables as part of your coda.samples variable list.
 c) Density plots of the intrinsic growth rate, the observation error variance, and the process model error variance
+```{r exponential growth model}
+exponential <- "
+model{
+    r ~ dnorm(0,0.001) ## prior on intrinsic growth rate
+    S ~ dgamma(0.001,0.001)  ## prior on PROCESS variance
+    tau ~ dgamma(0.01,0.01) ## prior on Observation error
+    x[1] ~ dnorm(0,0.001)  ## prior on initial time point
+    for (t in 2:n){
+      mu[t] <- x[t-1] + r  
+      x[t] ~ dnorm(mu[t],S) ## process model
+    }
+    
+    for (t in 1:n){
+      y[t] ~ dnorm(x[t],tau)  ## data model
+    }
+}
+"
+## initial conditions
+data1 <- list(y = y, n = 48)
+nchain = 3
+inits1 <- list()
+for(i in 1:nchain){
+  inits1[[i]] <- list(x = y, r = 0.0, S = runif(1,1/200,1/20), 
+                         tau = runif(1,1/200,1/20))
+  }
+
+j.model1   <- jags.model (file = textConnection(exponential),
+                             data = data1,
+                             inits = inits1,
+                             n.chains = 3)
+jags.out1   <- coda.samples (model = j.model1,
+                            variable.names 
+                        = c("x","r","S","tau","y[18]","y[19]","y[20]","y[21]","y[44]"),
+                                n.iter = 50000)
+```
+```{r diagnostic analysis}
+plot(jags.out1[,c("r","S","tau")])
+gelman.diag(jags.out1[,c("r","S","tau")])
+GBR <- gelman.plot(jags.out1[,c("r","S","tau")])          ## determine convergence
+burnin = 2000
+jags.burn1 <- window(jags.out1,start=burnin)  ## remove burn-in
+plot(jags.burn1[,c("r","S","tau")])
+acfplot(jags.burn1[,c("r","S","tau")])
+effectiveSize(jags.burn1)
+jags.thin1 = window(jags.burn1,thin=20)
+plot(jags.thin1[,c("r","S","tau")])
+```
+```{r CI plot}
+year = data$year
+dens = data$density
+logN = data$logN
+summary(jags.thin1)
+out1 <- as.matrix(jags.thin1)
+xpred <- seq(1946,1993,length=48)
+ycred1 <- out1[,grepl("^x",colnames(out1))]
+denscred1 <- exp(ycred1)
+ci1 <- apply(ycred1,2,quantile,c(0.025,0.5,0.975))
+densci1 <- apply(denscred1,2,quantile,c(0.025,0.5,0.975))
+plot(year,logN)
+lines(xpred,ci1[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci1[1,],col=3,lty=2)	## model CI
+lines(xpred,ci1[3,],col=3,lty=2)
+
+plot(year,dens,ylab = "N")
+lines(xpred,densci1[2,],col=3,lwd=2)  ## median model
+lines(xpred,densci1[1,],col=3,lty=2)	## model CI
+lines(xpred,densci1[3,],col=3,lty=2)
+```
+
+```{r Density plot for y}
+y_pre <- out1[,grepl("^y",colnames(out1))]
+y18.ci <- quantile(y_pre[,1],c(0.025,0.5,0.975))
+y19.ci <- quantile(y_pre[,2],c(0.025,0.5,0.975))
+y20.ci <- quantile(y_pre[,3],c(0.025,0.5,0.975))
+y21.ci <- quantile(y_pre[,4],c(0.025,0.5,0.975))
+y44.ci <- quantile(y_pre[,5],c(0.025,0.5,0.975))
+par(mfrow=c(3,2))
+plot(density(y_pre[,1],width=0.5),type='l',main = "density.y[18]")
+abline(v=y18.ci,lty=2)
+plot(density(y_pre[,2],width=0.5),type='l',main = "density.y[19]")
+abline(v=y19.ci,lty=2)
+plot(density(y_pre[,3],width=0.5),type='l',main = "density.y[20]")
+abline(v=y20.ci,lty=2)
+plot(density(y_pre[,4],width=0.5),type='l',main = "density.y[21]")
+abline(v=y21.ci,lty=2)
+plot(density(y_pre[,5],width=0.5),type='l',main = "density.y[44]")
+abline(v=y44.ci,lty=2)
+
+```
+```{r density plot for r tau S}
+r <- out1[,"r"]
+tau <- sqrt(1/out1[,"tau"])  
+sigma <- sqrt(1/out1[,"S"]) 
+r.ci <- quantile(r,c(0.025,0.5,0.975))
+tau.ci <- quantile(tau,c(0.025,0.5,0.975))
+sigma.ci <- quantile(sigma,c(0.025,0.5,0.975))
+plot(density(r,width=0.05),type='l',main = "density.r")
+abline(v=r.ci,lty=2)
+title(sub = "Intrinsic growth rate")
+plot(density(tau,width=0.05),type='l',main = "density.tau")
+abline(v=tau.ci,lty=2)
+title(sub = "Observation error variance")
+plot(density(sigma,width=0.05),type='l',main = "density.sigma")
+abline(v=sigma.ci,lty=2)
+title(sub = "Process model error variance")
+```
 
 2.	Modify the exponential growth process model in the JAGS code to instead be the Ricker growth model.  Rerun including your JAGS code and the same figures as in part 1 plus plots for both the prior and posterior density on the carrying capacity.
 Hint: when implementing the Ricker model, don't forget that N and X are on different scales.
+```{r Ricker growth model}
+Ricker <- "
+model{
+    r ~ dnorm(0,0.001) ## prior on intrinsic growth rate
+    K ~ dlnorm(0,0.1) ## prior on carrying capacity
+    S ~ dgamma(0.001,0.001)  ## prior on PROCESS variance
+    tau ~ dgamma(0.01,0.01) ## prior on Observation error
+    x[1] ~ dnorm(0,0.001)  ## prior on initial time point
+    for (t in 2:n){
+      mu[t] <- x[t-1] + r*(1- exp(x[t-1])/K)  
+      x[t] ~ dnorm(mu[t],S) ## process model
+    }
+    
+    for (t in 1:n){
+      y[t] ~ dnorm(x[t],tau)  ## data model
+    }
+}
+"
+## initial conditions
+data2 <- list(y = y, n = 48)
+nchain = 3
+inits2 <- list()
+for(i in 1:nchain){
+  inits2[[i]] <- list(x = y, r = 0.0, K = 0.2, S = runif(1,10,30), 
+                         tau = runif(1,20,200))
+  }
+
+j.model2   <- jags.model (file = textConnection(Ricker),
+                             data = data2,
+                             inits = inits2,
+                             n.chains = 3)
+jags.out2   <- coda.samples (model = j.model2,
+                            variable.names 
+                      =c("x","r","K","S","tau","y[18]","y[19]","y[20]","y[21]","y[44]"),
+                                n.iter = 50000)
+```
+```{r diagnostic analysis2}
+# plot(jags.out2[,c("K")])
+# effectiveSize(jags.out2[,"K"])
+# plot(jags.out2[,c("r","K","S","tau")])
+gelman.diag(jags.out2[,c("r","K","S","tau")])
+GBR <- gelman.plot(jags.out2[,c("r","K","S","tau")])          ## determine convergence
+burnin = 2000
+jags.burn2 <- window(jags.out2,start=burnin)  ## remove burn-in
+#plot(jags.burn2[,c("r","K","S","tau")])
+acfplot(jags.burn2[,c("r","K","S","tau")])
+effectiveSize(jags.burn2)
+jags.thin2 = window(jags.burn2,thin=20)
+plot(jags.thin2[,c("r","K","S","tau")])
+```
+```{r CI plot(2)}
+summary(jags.thin2)
+out2 <- as.matrix(jags.thin2)
+ycred2 <- out2[,grepl("^x",colnames(out2))]
+denscred2 <- exp(ycred2)
+ci2 <- apply(ycred2,2,quantile,c(0.025,0.5,0.975))
+densci2 <- apply(denscred2,2,quantile,c(0.025,0.5,0.975))
+plot(year,logN)
+lines(xpred,ci2[2,],col=3,lwd=2)  ## median model
+lines(xpred,ci2[1,],col=3,lty=2)	## model CI
+lines(xpred,ci2[3,],col=3,lty=2)
+
+plot(year,dens,ylab = "N")
+lines(xpred,densci2[2,],col=3,lwd=2)  ## median model
+lines(xpred,densci2[1,],col=3,lty=2)	## model CI
+lines(xpred,densci2[3,],col=3,lty=2)
+```
+```{r Density plot for y (2)}
+y_pre2 <- out2[,grepl("^y",colnames(out2))]
+y18.ci2 <- quantile(y_pre2[,1],c(0.025,0.5,0.975))
+y19.ci2 <- quantile(y_pre2[,2],c(0.025,0.5,0.975))
+y20.ci2 <- quantile(y_pre2[,3],c(0.025,0.5,0.975))
+y21.ci2 <- quantile(y_pre2[,4],c(0.025,0.5,0.975))
+y44.ci2 <- quantile(y_pre2[,5],c(0.025,0.5,0.975))
+par(mfrow=c(3,2))
+plot(density(y_pre2[,1],width=0.5),type='l',main = "density.y[18]")
+abline(v=y18.ci2,lty=2)
+plot(density(y_pre2[,2],width=0.5),type='l',main = "density.y[19]")
+abline(v=y19.ci2,lty=2)
+plot(density(y_pre2[,3],width=0.5),type='l',main = "density.y[20]")
+abline(v=y20.ci2,lty=2)
+plot(density(y_pre2[,4],width=0.5),type='l',main = "density.y[21]")
+abline(v=y21.ci2,lty=2)
+plot(density(y_pre2[,5],width=0.5),type='l',main = "density.y[44]")
+abline(v=y44.ci2,lty=2)
+
+```
+```{r density plot for r K tau S}
+r2 <- out2[,"r"]
+K <- out2[,"K"]
+tau2 <- sqrt(1/out2[,"tau"])  
+sigma2 <- sqrt(1/out2[,"S"]) 
+r.ci2 <- quantile(r2,c(0.025,0.5,0.975))
+K.ci <- quantile(K,c(0.025,0.5,0.975))
+tau.ci2 <- quantile(tau2,c(0.025,0.5,0.975))
+sigma.ci2 <- quantile(sigma2,c(0.025,0.5,0.975))
+plot(density(r2,width=0.05),type='l',main = "density.r")
+abline(v=r.ci2,lty=2)
+title(sub = "Intrinsic growth rate")
+plot(density(K,width=0.05),type='l',main = "density.K")
+abline(v=K.ci,lty=2)
+title(sub = "Carrying capacity")
+plot(density(tau2,width=0.05),type='l',main = "density.tau")
+abline(v=tau.ci2,lty=2)
+title(sub = "Observation error variance")
+plot(density(sigma2,width=0.05),type='l',main = "density.sigma")
+abline(v=sigma.ci2,lty=2)
+title(sub = "Process model error variance")
+```
 
 3.	Construct a summary table that includes the parameters in both models, their 95% CI, and model selection scores (your choice between DIC, WAIC, or predictive loss).
+```{r summary table}
+Exp.DIC0 <- dic.samples(j.model1, n.iter=50000)
+Exp.res <- sum(Exp.DIC0[["deviance"]])
+Exp.pen <- sum(Exp.DIC0[["penalty"]])
+Exp.DIC <- Exp.res + Exp.pen
+Ric.DIC0 <- dic.samples(j.model2, n.iter=50000)
+Ric.res <- sum(Ric.DIC0[["deviance"]])
+Ric.pen <- sum(Ric.DIC0[["penalty"]])
+Ric.DIC <- Ric.res + Ric.pen
+
+tbl <- data.frame(model=rep(c("Exponential","Ricker"),8) ,par = c("r","K","tau","sigma"),CI = c("CI025","CI975"))
+
+tbl <- data.frame(par =c("r","r","K","K","tau","tau","sigma","sigma"),model = c("Exponential","Ricker"))
+tbl$CI025<- c(r.ci[1],r.ci2[1],NA,K.ci[1],tau.ci[1],tau.ci2[1],sigma.ci[1],sigma.ci2[1])
+tbl$CI975<- c(r.ci[3],r.ci2[3],NA,K.ci[3],tau.ci[3],tau.ci2[3],sigma.ci[3],sigma.ci2[3])
+tbl$DIC.res <- rep(c(Exp.res,Ric.res),4)
+tbl$DIC.pen <- rep(c(Exp.pen,Ric.pen),4)
+tbl$DIC.all <- rep(c(Exp.DIC,Ric.DIC),4)
+tbl
+
+```
+
 
 4.	Briefly give an interpretation of your results.  Be sure to comment on which model is a better fit, what you can interpret about the importance of density dependence in regulating this population, and whether the population is at its carrying capacity.  
 
+The exponential growth model is a better fit because it's effective size is larger and the DIC score is lower but the Ricker model has a relatively lower process model error variance. Therefore adding a term N/K which represents the density dependence in regulating this population didn't strongly improve the model's performance, which maybe due to that the population didn't reach its carrying capacity. 
+
 5.	What can you infer about the relative importance of autogenic vs exogenous factors in regulating this population?
+
+From both models, we can see the process model error variance is larger than the observation error variance, which means exogenous factors are more important in regulating this population.
 
 6.	**Extra Credit**: An alternative to fitting this model as a time-series would have been to fit the data to the analytical solution for the model (e.g. for the exponential growth model, this would have been $N[1]*exp[r*t]$  ), which would have ignored the process varibility.  To approximate the difference in the resulting prediction, generate a time-series plot for the best fitting model (Exponential or Ricker) that contains: (1) the posterior model from your Bayesian fit (mean and CI on X), (2) the CI from the process model using the posterior parameter distributions (r, K, N[1]) but ignoring process error, (3) the observed data.  Comment on the difference between these lines, and between the lines and the data.

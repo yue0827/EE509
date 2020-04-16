@@ -288,7 +288,7 @@ j.model3   <- jags.model (file = textConnection(Mixed_effects),
                              inits = inits3,
                              n.chains = 3)
 jags.out3   <- coda.samples (model = j.model3,
-                            variable.names = c("beta0","beta1","S","alpha.t"),
+                            variable.names = c("beta0","beta1","S","alpha.t","tau.t"),
                                 n.iter = 200000)
 ```
 
