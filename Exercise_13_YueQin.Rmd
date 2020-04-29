@@ -78,7 +78,19 @@ hist(dxt,10)
 
 ### Lab Report Task 2
 2.  Does the detrended data meet the assumptions of second order stationarity? Why or why not?
+```
+Yes, because the rx detrended data is evenly distributed along the dash line in "Quantile-Quantile" figure, which means it meets the zero mean and homeskedastic variance assumptions.
+```
 3.	Does the first-difference time series meet the assumptions of second order stationarity?  Why or why not?
+```{r}
+n = length(dxt)
+qseq = seq(0.5/n,length=n,by=1/n)
+plot(qnorm(qseq,0,sd(dxt)),sort(dxt),main="Quantile-Quantile")
+abline(0,1,lty=2)
+
+## No because it is systematically lower than the normal distribution line.
+```
+
 
 Next let's evaluate the autocorrelation and partial autocorrelation in the time series.  You've seen ACFs quite frequently in MCMCs so you should be fairly familiar with their interpretation.  A partial ACF is a variant of ACF where at each lag we're looking at the autocorrelation after having accounted for the autocorrelation at shorter lags.  The number of significant lags in the partial ACF can be a very useful guide to the number of lags that should be included when modeling the system, for example with an ARIMA model.
  
@@ -89,6 +101,8 @@ acf(dxt)   ## ACF on the first difference series
 pacf(xt)   ## Partial ACF of the time series
 pacf(rx)   ## Partial ACF of the detrended data
 pacf(dxt)  ## Partial ACF of the first differences
+
+ar(rx)
 ```
  
 ## Part 2: ARIMA (MLE)
@@ -99,12 +113,27 @@ Now that we've calculated a number of diagnostics, let’s explore how me might 
  
  ### Lab Report Task 3
 4.  Based on the diagnostics you have already performed, what ARIMA model is likely to perform best? What orders should p, d, and q be? Why? Should you fit the model to xt or rx?
-
-5.	Fit the arima model you proposed using the function arima: 
 ```
-arima(xt,c(p,d,q))
+An ARIMA(2,0,0) model will perform best. Because first from the Partial ACF figure, I read p to be 2. Additionally, the AIC score is the lowest when d and q are to be 0. I should fit the model to rx.
+```
+5.	Fit the arima model you proposed using the function arima: 
+```{R }
+arima200 <- arima(rx,c(2,0,0))
+AIC(arima200)
 ```
 Then propose alternative models that are similar to the one you fit (e.g. increase or decrease orders by 1).  Based on AIC scores what model provides the best fit?  Provide a table of models you tried and their AIC scores.
+```{r}
+arima000 <- arima(rx,c(0,0,0))
+arima100 <- arima(rx,c(1,0,0))
+arima110 <- arima(rx,c(1,1,0))
+arima111 <- arima(rx,c(1,1,1))
+arima010 <- arima(rx,c(0,1,0))
+arima011 <- arima(rx,c(0,1,1))
+arima200 <- arima(rx,c(2,0,0))
+AICscore <- data.frame(model = c("arima000","arima110","arima100","arima111","arima010","arima011","arima200"), score = c(AIC(arima000),AIC(arima110),AIC(arima100),AIC(arima111),AIC(arima010),AIC(arima011),AIC(arima200)))
+AICscore[order(AICscore$score),]
+```
+
 
 # Part 3: Bayesian AR(1)
 
@@ -115,6 +144,7 @@ data <- list(time = 1980:2008,y = ozone$Mean)
 MLE.fit <- lm(y~time,data)
 plot(y~time,data)
 abline(MLE.fit,col=2)
+MLE.fit
 ```
 
 However, if we wanted to fit a Bayesian linear model to this trend we might want to account for the autocorrelation in the data. Conceptually, to do so we'd want to switch our standard Gaussian likelihood with independent residuals to a multivariate Gaussian likelihood with a covariance matrix. 
@@ -143,4 +173,85 @@ Hints/warnings:
 * This model can be slow to converge
 * The units on the ozone data are small (and thus variance priors should be given careful thought).
 * A dmvnorm prior on beta will result in conjugacy with the dmvnorm likelihood, while separate dnorm priors on beta[1] and beta[2] will not.
+```{r,echo=FALSE}
+library(rjags)
+library(coda)
+```
+
+```{r Bayesian model}
+AR1 <- "
+model{
+
+  beta ~ dmnorm(b0,Vb) ## multivariate Normal prior on vector of regression params
+  sigma ~ dgamma(0.001,0.001)
+  rho   ~ dunif(-1,1)
+  
+  SIGMA <- inverse((1/sigma)/(1-rho^2)*rho^H) ## calculate precision from SD
+  
+  mu <- beta[1]+beta[2]*x
+  g ~ dmnorm(mu,SIGMA)
+
+}
+"
+data <- list(x = ozone$Year, g = ozone$Mean)
+data$b0 <- as.vector(c(0,0))      ## regression b means
+data$Vb <- solve(diag(10000,2))   ## regression b precisions
+data$H = as.matrix(dist(1:nrow(ozone),diag = TRUE,upper = TRUE))
+
+## initial conditions
+nchain = 3
+inits <- list()
+for(i in 1:nchain){
+ inits[[i]] <- list(beta = rnorm(2,0,0.01))
+}
+
+j.model   <- jags.model (file = textConnection(AR1),
+                             data = data,
+                             inits = inits,
+                             n.chains = 3)
+jags.out   <- coda.samples (model = j.model,
+                            variable.names = c("beta","sigma","rho"),
+                                n.iter = 5000)
+```
+```{r diagnostic analysis}
+plot(jags.out)
+gelman.diag(jags.out)
+GBR <- gelman.plot(jags.out)               ## determine convergence       
+burnin = 2000                                
+jags.burn <- window(jags.out,start=burnin)  ## remove burn-in
+plot(jags.burn) 
+GBR <- gelman.plot(jags.burn) 
+acfplot(jags.burn)
+effectiveSize(jags.burn)
+jags.thin = window(jags.burn,thin=10)
+plot(jags.thin)
+out <- as.matrix(jags.thin)
+pairs(out)	
+cor(out)
+```
+```{r summary and density plot for beta sigma rho}
+summary(jags.thin)
+b1 <- out[,"beta[1]"]
+b2 <- out[,"beta[2]"]
+rho <- out[,"rho"]
+sigma <- sqrt(1/out[,"sigma"]) 
+b1.ci <- quantile(b1,c(0.025,0.5,0.975))
+b2.ci <- quantile(b2,c(0.025,0.5,0.975))
+rho.ci <- quantile(rho,c(0.025,0.5,0.975))
+sigma.ci <- quantile(sigma,c(0.025,0.5,0.975))
+
+plot(density(b1,width=0.5),type='l',main = "b1")
+abline(v=b1.ci,lty=2)
+plot(density(b2,width=0.05),type='l',main = "b2")
+abline(v=b2.ci,lty=2)
+
+plot(density(rho,width=0.1),type='l',main = "rho")
+abline(v=rho.ci,lty=2)
+
+
+plot(density(sigma,width=0.05),type='l',main = "sigma")
+abline(v=sigma.ci,lty=2)
+
+## The mean of b2 is negative showing the downward trend of ozones with year increase.The distribution of correlation parameter rho has negative skewness, which means the past data has a positive effect on predicting the present one.
+```
 
